@@ -10,7 +10,7 @@
 #include <cstring>
 #define next_line_size 9
 using namespace std;
-
+enum AdrMode{immediate, undirect, index, simple};
 struct Base{
     string name = "unnamed";
     int address = 0;
@@ -34,6 +34,7 @@ struct REGTAB{
 struct SYMTAB{
     string name = "unnamed";
     int address = 0;
+    char type = 'R';
 };
 
 struct TRecords{
@@ -59,6 +60,21 @@ int parseInt(const string& str){
         else
             val += (mplier * (tmp[i]-'0'));
         mplier *= 10;
+    }
+    return val;
+}
+
+int strDec_to_dec(string str){
+    if(str[0]=='#'){
+        str = str.substr(1,str.size());
+    }
+    reverse(str.begin(), str.end());
+    int val = 0;
+    int base = 1;
+    for(int i=0;i<str.size();++i){
+        val += base * (str[i]-'0');
+        base *= 10;
+
     }
     return val;
 }
@@ -134,6 +150,7 @@ bool Pass1(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab){
         len.locctr = 0; // initialize LOCCTR to 0
     }
     // ========================================================================================================
+    int t_loc = 0;
     while(stmt.mnemonic != "END"){// while MNEMONIC != 'END' do
         if(stmt.label != "."){//if this is not a comment line then
             if(stmt.label != " "){//if there is a symbol in the LABEL field then
@@ -142,15 +159,25 @@ bool Pass1(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab){
                     cout << "Duplicate symbols!" << endl;//Set error flag (duplicate symbol)
                     return false;
                 }else{
-                    SYMTAB temp;
-                    temp.address = len.locctr;
-                    temp.name = stmt.label;
-                    symtab.insert(MySYMTAB::value_type(temp.name,temp));// Insert (LABEL,LOCCTR) into SYMTAB
+                    if(stmt.mnemonic != "EQU"){
+                        SYMTAB temp;
+                        temp.address = len.locctr;
+                        temp.name = stmt.label;
+                        symtab.insert(MySYMTAB::value_type(temp.name,temp));// Insert (LABEL,LOCCTR) into SYMTAB
+                    }
                 }
             }
 
-            cout << std::hex << len.locctr << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;//write line to intermediate file
-            ofile << len.locctr << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+
+
+            if(stmt.mnemonic != "EQU"){//write line to intermediate file
+                cout << std::hex << len.locctr << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+                ofile << len.locctr  << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+            }
+
+
+
+
 
             bool found = false;
             string mnemonic = stmt.mnemonic;
@@ -178,6 +205,38 @@ bool Pass1(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab){
                     len.locctr += (stmt.operand.size()-3);
                 else if(stmt.operand[0] == 'X')
                     len.locctr += ((stmt.operand.size()-3)/2);
+            }else if(stmt.mnemonic == "EQU"){
+                if(stmt.operand[0] >= '0'  && stmt.operand[0] <= '9'){
+                    SYMTAB temp;
+                    t_loc = temp.address = strDec_to_dec(stmt.operand);
+                    temp.name = stmt.label;
+                    symtab.insert(MySYMTAB::value_type(temp.name,temp));// Insert (LABEL,LOCCTR) into SYMTAB
+                }else if(stmt.operand == "*"){
+                    SYMTAB temp;
+                    t_loc = temp.address = len.locctr;
+                    temp.name = stmt.label;
+                    symtab.insert(MySYMTAB::value_type(temp.name,temp));// Insert (LABEL,LOCCTR) into SYMTAB
+                }else{// maybe the symbol is already defined
+                    int i = 0;
+                    int count = 0;
+                    for(i;i<stmt.operand.size();++i){
+                        if(stmt.operand[i] == '-'){
+                            count = i;
+                            break;
+                        }
+                    }
+                    string op1 = stmt.operand.substr(0,count);
+                    i++;
+                    string op2 = stmt.operand.substr(i,stmt.operand.size());
+
+                    SYMTAB temp;
+                    t_loc = temp.address = symtab[op1].address - symtab[op2].address;
+                    temp.name = stmt.label;
+                    symtab.insert(MySYMTAB::value_type(temp.name,temp));// Insert (LABEL,LOCCTR) into SYMTAB
+                }
+                cout << std::hex << t_loc << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+                ofile << t_loc << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+
             }else{
                 cout << "invalid operation code!" << endl;//Set error flag (invalid operation code)
                 return false;
@@ -215,14 +274,14 @@ string parseOPND(string &opnd){
                 break;
             }
         }
-        if(flag){//flag && temp[count+1] == 'X'
+        if(flag){
             temp = temp.substr(0,count);
         }
     }
     //cout << temp << endl;
     return temp;
 }
-enum AdrMode{immediate, undirect, index, simple};
+
 AdrMode GetAdrMode(string &opnd){
     if(opnd[0] == '#')
         return immediate;
@@ -230,8 +289,13 @@ AdrMode GetAdrMode(string &opnd){
         return undirect;
     }else{
         for(int i=0;i<opnd.size();++i){
-            if(opnd[i] == ',')
-                return index;
+            if(opnd[i] == ','){
+                ++i;
+                for(i;i<opnd.size();++i){
+                    if(opnd[i] == ' ') continue;
+                    if(opnd[i] == 'X') return index;
+                }
+            }
         }
         return simple;
     }
@@ -252,20 +316,7 @@ string bin_str_to_hex_str(string bin_str){
     return hex_str;
 }
 
-int strDec_to_dec(string str){
-    if(str[0]=='#'){
-        str = str.substr(1,str.size());
-    }
-    reverse(str.begin(), str.end());
-    int val = 0;
-    int base = 1;
-    for(int i=0;i<str.size();++i){
-        val += base * (str[i]-'0');
-        base *= 10;
 
-    }
-    return val;
-}
 
 
 bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, map<string, REGTAB> &regtab){
@@ -329,14 +380,16 @@ bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, ma
                         }else if(adrmode == undirect){
                             asm_nixbpe = "100001";
                         }else if(adrmode == index){
-                            asm_nixbpe = "001001";
+                            asm_nixbpe = "111001";
                         }else if(adrmode == simple){
                             asm_nixbpe = "110001";
                         }
                         // Adjustment(MRecord)
-                        MRecord temp;
-                        temp.address = stmt.address+1;
-                        mrecords.push_back(temp);
+                        if(stmt.operand[0] != '#'){
+                            MRecord temp;
+                            temp.address = stmt.address+1;
+                            mrecords.push_back(temp);
+                        }
                     }else{// format 3
                         asm_opcode = bitset<6>(optab[mnemonic].opcode).to_string();
                         int offset = symtab[opnd].address;//Calculate Offset
@@ -459,8 +512,8 @@ bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, ma
             stmt = parseSrc_Stmt(str);
             stmt.address = len.locctr;
             continue;
-        }else if(stmt.mnemonic == "RESB" || stmt.mnemonic == "RESW"){
-            cout << '\t' << std::hex << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+        }else if(stmt.mnemonic == "RESB" || stmt.mnemonic == "RESW" || stmt.mnemonic == "EQU"){
+            cout << std::hex << stmt.address << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
             if(EnablePrint == true){// Write text record to object program
                 ofile << "T";
                 ofile.width(6);     ofile.fill('0');
@@ -606,11 +659,11 @@ int main(){
                 break;
             case 4:
                 flag = false;
-                if(!Pass2(len,optab,symtab,regtab))return 0;
+                if(!Pass2(len,optab,symtab,regtab)){system("pause");return 0;}
                 break;
             default:
                 flag = false;
-                if(!Pass2(len,optab,symtab,regtab))return 0;
+                if(!Pass2(len,optab,symtab,regtab)){system("pause");return 0;}
         }
         system("pause");
         system("cls");
