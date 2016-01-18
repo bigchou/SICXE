@@ -295,7 +295,7 @@ bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, ma
     stmt = parseSrc_Stmt(str);
     stmt.address = len.locctr;
     // write listing line
-    cout << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+    cout << '\t' << std::hex << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
     //write Header record to object program
     ofile << std::hex << "H";
     ofile << stmt.label << ' ';
@@ -421,11 +421,12 @@ bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, ma
             }else{//store 0 as operand address (like as RSUB)
                 asm_opcode = bitset<6>(optab[mnemonic].opcode).to_string();
                 asm_nixbpe = "110000";
-                asm_adr = "0000000000000000";
+                for(int i=0;i<12;++i) asm_adr += '0';
             }
             // assemble the object code instruction
             asm_instr = asm_opcode + asm_nixbpe + asm_adr;
             asm_instr = bin_str_to_hex_str(asm_instr);
+
         }else if(stmt.mnemonic == "BYTE" || stmt.mnemonic == "WORD"){//else if OPCODE = "BYTE" or "WORD" then
             asm_instr.clear();
             if(stmt.operand[0] == 'C'){
@@ -449,7 +450,7 @@ bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, ma
                 }
             }
         }else if(stmt.mnemonic == "BASE"){
-            cout << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+            cout << '\t' << std::hex << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
             base.address = symtab[stmt.operand].address;
             base.name = symtab[stmt.operand].name;
             // read next line
@@ -459,7 +460,7 @@ bool Pass2(Len &len , map<string, OPTAB> &optab, map<string, SYMTAB> &symtab, ma
             stmt.address = len.locctr;
             continue;
         }else if(stmt.mnemonic == "RESB" || stmt.mnemonic == "RESW"){
-            cout << '\t' << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
+            cout << '\t' << std::hex << stmt.label << '\t' << stmt.mnemonic << '\t' << stmt.operand << endl;
             if(EnablePrint == true){// Write text record to object program
                 ofile << "T";
                 ofile.width(6);     ofile.fill('0');
